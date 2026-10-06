@@ -1,16 +1,22 @@
+# Dependencies
 node_modules/
+
+# Expo
 .expo/
 .expo-shared/
 dist/
 web-build/
+
+# Logs
 *.log
 
-# Firebase — do NOT commit real keys if you prefer to keep them private;
-# since this project uses the Firebase JS SDK, the config is a public web
-# key (safe to commit for a student project), but if your group prefers to
-# keep it out of GitHub, uncomment the line below and share the config via
-# WhatsApp/Drive instead.
-# src/firebase/firebaseConfig.js
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Generated / temporary files
+structure.txt
 
 # macOS / IDE
 .DS_Store
