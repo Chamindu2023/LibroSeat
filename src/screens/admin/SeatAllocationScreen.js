@@ -58,6 +58,11 @@ export default function SeatAllocationScreen({ navigation }) {
     }
   };
 
+  const freeCount = seats.filter(s => s.status === 'free').length;
+  const occupiedCount = seats.filter(s => s.status === 'occupied').length;
+  const idleCount = seats.filter(s => s.status === 'unattended').length;
+  const reservedCount = seats.filter(s => s.status === 'reserved').length;
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Top Header */}
@@ -156,7 +161,7 @@ export default function SeatAllocationScreen({ navigation }) {
               <Ionicons name="checkmark-circle-outline" size={14} color="#0D9488" style={{marginRight: 4}} />
               <Text style={styles.statLabelFree}>FREE</Text>
             </View>
-            <Text style={styles.statValue}>18</Text>
+            <Text style={styles.statValue}>{freeCount < 10 ? `0${freeCount}` : freeCount}</Text>
           </View>
           
           <View style={[styles.statBox, styles.statBoxOccupied]}>
@@ -164,7 +169,7 @@ export default function SeatAllocationScreen({ navigation }) {
               <Ionicons name="person-outline" size={14} color="#475569" style={{marginRight: 4}} />
               <Text style={styles.statLabelOccupied}>OCCUPIED</Text>
             </View>
-            <Text style={styles.statValue}>24</Text>
+            <Text style={styles.statValue}>{occupiedCount < 10 ? `0${occupiedCount}` : occupiedCount}</Text>
           </View>
           
           <View style={[styles.statBox, styles.statBoxIdle]}>
@@ -172,7 +177,7 @@ export default function SeatAllocationScreen({ navigation }) {
               <Ionicons name="time-outline" size={14} color="#D97706" style={{marginRight: 4}} />
               <Text style={styles.statLabelIdle}>IDLE</Text>
             </View>
-            <Text style={styles.statValueIdle}>06</Text>
+            <Text style={styles.statValueIdle}>{idleCount < 10 ? `0${idleCount}` : idleCount}</Text>
           </View>
         </View>
 
@@ -183,15 +188,15 @@ export default function SeatAllocationScreen({ navigation }) {
         </View>
 
         <View style={styles.statusPillsRow}>
-          <View style={styles.statusPill}><View style={[styles.dot, {backgroundColor: '#0D9488'}]}/><Text style={styles.statusPillText}>Free (18)</Text></View>
-          <View style={styles.statusPill}><View style={[styles.dot, {backgroundColor: '#0F766E'}]}/><Text style={styles.statusPillText}>Occupied (24)</Text></View>
+          <View style={styles.statusPill}><View style={[styles.dot, {backgroundColor: '#0D9488'}]}/><Text style={styles.statusPillText}>Free ({freeCount})</Text></View>
+          <View style={styles.statusPill}><View style={[styles.dot, {backgroundColor: '#0F766E'}]}/><Text style={styles.statusPillText}>Occupied ({occupiedCount})</Text></View>
           <View style={[styles.statusPill, {borderColor: '#FECACA', backgroundColor: '#FEF2F2'}]}>
             <View style={[styles.dot, {backgroundColor: '#EF4444'}]}/>
-            <Text style={[styles.statusPillText, {color: '#EF4444'}]}>Unattended (6)</Text>
+            <Text style={[styles.statusPillText, {color: '#EF4444'}]}>Unattended ({idleCount})</Text>
           </View>
           <View style={[styles.statusPill, {borderColor: '#CCFBF1', backgroundColor: '#F0FDFA'}]}>
             <View style={[styles.dot, {backgroundColor: '#14B8A6'}]}/>
-            <Text style={[styles.statusPillText, {color: '#0D9488'}]}>Reserved</Text>
+            <Text style={[styles.statusPillText, {color: '#0D9488'}]}>Reserved ({reservedCount})</Text>
           </View>
         </View>
 

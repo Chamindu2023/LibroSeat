@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isSupabaseConfigured, supabase } from '../../supabase/supabaseConfig';
 
 const LOCAL_BOOKS_KEY = 'libroseat.local.books.v2';
+const LOCAL_SEATS_KEY = 'libroseat.local.seats.v1';
 
 
 
@@ -161,7 +162,6 @@ export async function fetchSeatsData() {
       return [];
     }
     
-    // Attempt to join active reservations to get patron details for occupied/unattended seats
     const { data: activeReservations } = await supabase
       .from('reservations')
       .select('ref_id, profiles(full_name, student_id)')
@@ -186,8 +186,14 @@ export async function fetchSeatsData() {
     }));
   }
 
-  // Local Mock Fallback matching the grid
-  return [
+  // Local Storage Fallback
+  const raw = await AsyncStorage.getItem(LOCAL_SEATS_KEY);
+  if (raw) {
+    return JSON.parse(raw);
+  }
+
+  // Seed initial grid if empty
+  const initialSeats = [
     { id: '1', label: 'A1', status: 'free' },
     { id: '2', label: 'A2', status: 'occupied' },
     { id: '3', label: 'A3', status: 'occupied' },
@@ -205,14 +211,28 @@ export async function fetchSeatsData() {
     { id: '15', label: 'D3', status: 'free' },
     { id: '16', label: 'D4', status: 'free' },
   ];
+  await AsyncStorage.setItem(LOCAL_SEATS_KEY, JSON.stringify(initialSeats));
+  return initialSeats;
 }
 
 export async function releaseSeat(seatId) {
   if (isSupabaseConfigured) {
     const { error: seatErr } = await supabase.from('seats').update({ status: 'free' }).eq('id', seatId);
-    // Also cancel any reservation attached to this seat
     await supabase.from('reservations').update({ status: 'cancelled' }).eq('ref_id', seatId).eq('status', 'unattended');
     return !seatErr;
+  }
+  
+  // Local Storage Fallback
+  const raw = await AsyncStorage.getItem(LOCAL_SEATS_KEY);
+  if (raw) {
+    let seats = JSON.parse(raw);
+    seats = seats.map(s => {
+      if (s.id === seatId) {
+        return { ...s, status: 'free', patronName: undefined, patronId: undefined, idleMinutes: undefined };
+      }
+      return s;
+    });
+    await AsyncStorage.setItem(LOCAL_SEATS_KEY, JSON.stringify(seats));
   }
   return true;
 }
