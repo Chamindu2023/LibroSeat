@@ -70,3 +70,84 @@ export async function addBook(bookData) {
   await AsyncStorage.setItem(LOCAL_BOOKS_KEY, JSON.stringify(updatedBooks));
   return finalBook;
 }
+
+export async function fetchAllReservations() {
+  if (isSupabaseConfigured) {
+    const { data: reservations, error } = await supabase
+      .from('reservations')
+      .select(`
+        *,
+        profiles (
+          full_name,
+          student_id
+        )
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.warn('Error fetching reservations:', error);
+      return [];
+    }
+
+    // Since ref_id isn't explicitly a foreign key to books/seats in the schema, we must fetch items separately or join them if we had views.
+    // To make it efficient, we fetch all books and seats, then map them.
+    const [{ data: books }, { data: seats }] = await Promise.all([
+      supabase.from('books').select('id, title'),
+      supabase.from('seats').select('id, label'),
+    ]);
+
+    const bookMap = {};
+    if (books) books.forEach(b => { bookMap[b.id] = b.title; });
+    const seatMap = {};
+    if (seats) seats.forEach(s => { seatMap[s.id] = s.label; });
+
+    return reservations.map(r => ({
+      id: r.id,
+      userId: r.user_id,
+      patronName: r.profiles?.full_name || 'Unknown User',
+      patronId: r.profiles?.student_id || 'Unknown ID',
+      type: r.type,
+      itemName: r.type === 'book' ? (bookMap[r.ref_id] || 'Unknown Book') : (seatMap[r.ref_id] || 'Unknown Seat'),
+      status: r.status,
+      createdAt: r.created_at,
+    }));
+  }
+
+  // Local fallback mock data
+  return [
+    {
+      id: '1',
+      patronName: 'Marcus Chen',
+      patronId: 'STU-9043',
+      type: 'seat',
+      itemName: 'Reading Carrel 12 (Quiet Zone)',
+      status: 'confirmed',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: '2',
+      patronName: 'Sophia Patel',
+      patronId: 'FAC-4102',
+      type: 'book',
+      itemName: 'Principles of Quantum Mechanics',
+      status: 'expired',
+      createdAt: new Date(Date.now() - 86400000).toISOString(),
+    }
+  ];
+}
+
+export async function cancelReservation(reservationId) {
+  if (isSupabaseConfigured) {
+    const { error } = await supabase
+      .from('reservations')
+      .update({ status: 'cancelled' })
+      .eq('id', reservationId);
+    
+    if (error) {
+      console.warn('Error cancelling reservation:', error);
+      return false;
+    }
+    return true;
+  }
+  return true; // Local mock fallback
+}
