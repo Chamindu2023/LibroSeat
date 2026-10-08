@@ -6,7 +6,22 @@ const SESSION_KEY = 'libroseat.local.session';
 
 async function readUsers() {
   const raw = await AsyncStorage.getItem(USERS_KEY);
-  return raw ? JSON.parse(raw) : {};
+  const users = raw ? JSON.parse(raw) : {};
+  
+  // Auto-seed a default staff account for local dev testing
+  const defaultStaffEmail = 'admin@libroseat-staff.local';
+  if (!users[defaultStaffEmail]) {
+    users[defaultStaffEmail] = {
+      uid: 'local-staff-admin',
+      email: defaultStaffEmail,
+      password: 'admin', // Default password
+      role: 'staff',
+      createdAt: new Date().toISOString(),
+    };
+    await AsyncStorage.setItem(USERS_KEY, JSON.stringify(users));
+  }
+  
+  return users;
 }
 
 async function writeUsers(users) {
