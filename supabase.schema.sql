@@ -1,8 +1,12 @@
--- LibroSeat Supabase schema
--- Run this once in Supabase Dashboard -> SQL Editor.
+-- LibroSeat — Supabase schema (corrected to match what actually exists)
+-- Run each section once. Safe to re-run: every CREATE is guarded.
+-- No payment-related tables — there is no payment flow in the high-fidelity
+-- prototype, so that part of the original schema has been removed entirely.
 
-create extension if not exists "pgcrypto";
-
+-- ============================================================
+-- 1. profiles (already created manually — included here for the record,
+--    so this file accurately reflects the real database)
+-- ============================================================
 do $$ begin
   create type public.user_role as enum ('student', 'staff');
 exception
@@ -18,143 +22,152 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 
+alter table public.profiles enable row level security;
+
+drop policy if exists "Users read own profile" on public.profiles;
+create policy "Users read own profile"
+  on public.profiles for select
+  to authenticated
+  using (auth.uid() = id);
+
+drop policy if exists "Users insert own profile" on public.profiles;
+create policy "Users insert own profile"
+  on public.profiles for insert
+  to authenticated
+  with check (auth.uid() = id);
+
+drop policy if exists "Users update own profile" on public.profiles;
+create policy "Users update own profile"
+  on public.profiles for update
+  to authenticated
+  using (auth.uid() = id)
+  with check (auth.uid() = id);
+
+-- ============================================================
+-- 2. books (Book Module — Shashith)
+-- ============================================================
 create table if not exists public.books (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   author text,
-  status text not null default 'available',
-  created_at timestamptz not null default now()
+  is_available boolean not null default true
 );
 
-create table if not exists public.seats (
-  id uuid primary key default gen_random_uuid(),
-  label text not null,
-  status text not null default 'available',
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.reservations (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles(id) on delete cascade,
-  type text not null check (type in ('book', 'seat')),
-  ref_id uuid,
-  status text not null default 'confirmed',
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.notifications (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles(id) on delete cascade,
-  title text not null,
-  message text,
-  is_read boolean not null default false,
-  created_at timestamptz not null default now()
-);
-
--- Saved payment methods. Never store full card numbers or CVV.
-create table if not exists public.payment_methods (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles(id) on delete cascade,
-  cardholder_name text not null,
-  brand text not null,
-  last4 text not null,
-  expiry_month integer not null check (expiry_month between 1 and 12),
-  expiry_year integer not null,
-  is_default boolean not null default false,
-  created_at timestamptz not null default now()
-);
-
-alter table public.profiles enable row level security;
 alter table public.books enable row level security;
-alter table public.seats enable row level security;
-alter table public.reservations enable row level security;
-alter table public.notifications enable row level security;
-alter table public.payment_methods enable row level security;
-
-drop policy if exists "Users read own profile" on public.profiles;
-create policy "Users read own profile"
-on public.profiles for select
-to authenticated
-using (auth.uid() = id);
-
-drop policy if exists "Users insert own profile" on public.profiles;
-create policy "Users insert own profile"
-on public.profiles for insert
-to authenticated
-with check (auth.uid() = id);
-
-drop policy if exists "Users update own profile" on public.profiles;
-create policy "Users update own profile"
-on public.profiles for update
-to authenticated
-using (auth.uid() = id)
-with check (auth.uid() = id);
 
 drop policy if exists "Anyone signed in can read books" on public.books;
 create policy "Anyone signed in can read books"
-on public.books for select
-to authenticated
-using (true);
+  on public.books for select
+  to authenticated
+  using (true);
+
+drop policy if exists "Staff manage books" on public.books;
+create policy "Staff manage books"
+  on public.books for all
+  to authenticated
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'staff'))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'staff'));
+
+-- ============================================================
+-- 3. seats (Seat Module — Higgoda)
+-- ============================================================
+create table if not exists public.seats (
+  id uuid primary key default gen_random_uuid(),
+  seat_number text not null,
+  room text,
+  is_available boolean not null default true
+);
+
+alter table public.seats enable row level security;
 
 drop policy if exists "Anyone signed in can read seats" on public.seats;
 create policy "Anyone signed in can read seats"
-on public.seats for select
-to authenticated
-using (true);
+  on public.seats for select
+  to authenticated
+  using (true);
+
+drop policy if exists "Staff manage seats" on public.seats;
+create policy "Staff manage seats"
+  on public.seats for all
+  to authenticated
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'staff'))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'staff'));
+
+-- ============================================================
+-- 4. reservations (Home & Account Module — Nimnada; also used by Book/Seat
+--    modules to create, and Admin module to manage)
+--    user_id is uuid referencing auth.users(id) — this consistent typing
+--    is what the earlier "uuid = text" error was caused by getting wrong.
+-- ============================================================
+create table if not exists public.reservations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  type text not null check (type in ('book', 'seat')),
+  ref_id uuid not null,
+  status text not null default 'confirmed' check (status in ('confirmed', 'collected', 'cancelled', 'expired')),
+  created_at timestamptz not null default now(),
+  due_date timestamptz
+);
+
+alter table public.reservations enable row level security;
 
 drop policy if exists "Users read own reservations" on public.reservations;
 create policy "Users read own reservations"
-on public.reservations for select
-to authenticated
-using (auth.uid() = user_id);
+  on public.reservations for select
+  to authenticated
+  using (auth.uid() = user_id);
+
+drop policy if exists "Users create own reservations" on public.reservations;
+create policy "Users create own reservations"
+  on public.reservations for insert
+  to authenticated
+  with check (auth.uid() = user_id);
 
 drop policy if exists "Users update own reservations" on public.reservations;
 create policy "Users update own reservations"
-on public.reservations for update
-to authenticated
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+  on public.reservations for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Staff manage all reservations" on public.reservations;
+create policy "Staff manage all reservations"
+  on public.reservations for all
+  to authenticated
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'staff'))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'staff'));
+
+-- ============================================================
+-- 5. notifications (Home & Account Module — Nimnada)
+-- ============================================================
+create table if not exists public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  message text not null,
+  type text,
+  related_reservation_id uuid references public.reservations(id) on delete set null,
+  created_at timestamptz not null default now(),
+  is_read boolean not null default false
+);
+
+alter table public.notifications enable row level security;
 
 drop policy if exists "Users read own notifications" on public.notifications;
 create policy "Users read own notifications"
-on public.notifications for select
-to authenticated
-using (auth.uid() = user_id);
+  on public.notifications for select
+  to authenticated
+  using (auth.uid() = user_id);
 
 drop policy if exists "Users update own notifications" on public.notifications;
 create policy "Users update own notifications"
-on public.notifications for update
-to authenticated
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+  on public.notifications for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
-drop policy if exists "Users read own payment methods" on public.payment_methods;
-create policy "Users read own payment methods"
-on public.payment_methods for select
-to authenticated
-using (auth.uid() = user_id);
-
-drop policy if exists "Users insert own payment methods" on public.payment_methods;
-create policy "Users insert own payment methods"
-on public.payment_methods for insert
-to authenticated
-with check (auth.uid() = user_id);
-
-drop policy if exists "Users update own payment methods" on public.payment_methods;
-create policy "Users update own payment methods"
-on public.payment_methods for update
-to authenticated
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
-
-drop policy if exists "Users delete own payment methods" on public.payment_methods;
-create policy "Users delete own payment methods"
-on public.payment_methods for delete
-to authenticated
-using (auth.uid() = user_id);
-
--- Optional staff account setup:
--- 1. Create a Supabase Auth user with email like staff001@libroseat-staff.local.
--- 2. Insert/update that user's profile with role = 'staff'.
--- Example after finding the auth.users.id value:
--- update public.profiles set role = 'staff' where email = 'staff001@libroseat-staff.local';
+drop policy if exists "Staff manage all notifications" on public.notifications;
+create policy "Staff manage all notifications"
+  on public.notifications for all
+  to authenticated
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'staff'))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'staff'));
