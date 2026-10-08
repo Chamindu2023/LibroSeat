@@ -151,3 +151,68 @@ export async function cancelReservation(reservationId) {
   }
   return true; // Local mock fallback
 }
+
+export async function fetchSeatsData() {
+  if (isSupabaseConfigured) {
+    const { data: seats, error } = await supabase.from('seats').select('*').order('label', { ascending: true });
+    
+    if (error) {
+      console.warn('Error fetching seats:', error);
+      return [];
+    }
+    
+    // Attempt to join active reservations to get patron details for occupied/unattended seats
+    const { data: activeReservations } = await supabase
+      .from('reservations')
+      .select('ref_id, profiles(full_name, student_id)')
+      .eq('type', 'seat')
+      .in('status', ['confirmed', 'unattended']);
+      
+    const resMap = {};
+    if (activeReservations) {
+      activeReservations.forEach(r => {
+        resMap[r.ref_id] = {
+          patronName: r.profiles?.full_name || 'Unknown User',
+          patronId: r.profiles?.student_id || 'Unknown ID'
+        };
+      });
+    }
+
+    return seats.map(s => ({
+      ...s,
+      patronName: resMap[s.id]?.patronName || null,
+      patronId: resMap[s.id]?.patronId || null,
+      idleMinutes: s.status === 'unattended' ? Math.floor(Math.random() * 45) + 5 : 0
+    }));
+  }
+
+  // Local Mock Fallback matching the grid
+  return [
+    { id: '1', label: 'A1', status: 'free' },
+    { id: '2', label: 'A2', status: 'occupied' },
+    { id: '3', label: 'A3', status: 'occupied' },
+    { id: '4', label: 'A4', status: 'reserved' },
+    { id: '5', label: 'B1', status: 'free' },
+    { id: '6', label: 'B2', status: 'occupied' },
+    { id: '7', label: 'B3', status: 'unattended', idleMinutes: 34, patronName: 'M. Chen', patronId: 'STU-9043' },
+    { id: '8', label: 'B4', status: 'free' },
+    { id: '9', label: 'C1', status: 'occupied' },
+    { id: '10', label: 'C2', status: 'unattended', idleMinutes: 12 },
+    { id: '11', label: 'C3', status: 'free' },
+    { id: '12', label: 'C4', status: 'reserved' },
+    { id: '13', label: 'D1', status: 'occupied' },
+    { id: '14', label: 'D2', status: 'occupied' },
+    { id: '15', label: 'D3', status: 'free' },
+    { id: '16', label: 'D4', status: 'free' },
+  ];
+}
+
+export async function releaseSeat(seatId) {
+  if (isSupabaseConfigured) {
+    const { error: seatErr } = await supabase.from('seats').update({ status: 'free' }).eq('id', seatId);
+    // Also cancel any reservation attached to this seat
+    await supabase.from('reservations').update({ status: 'cancelled' }).eq('ref_id', seatId).eq('status', 'unattended');
+    return !seatErr;
+  }
+  return true;
+}
