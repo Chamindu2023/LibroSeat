@@ -6,6 +6,7 @@ import { signOutAccount } from '../../supabase/authService';
 import LogoutConfirmModal from '../../components/LogoutConfirmModal';
 import { isSupabaseConfigured, supabase } from '../../supabase/supabaseConfig';
 import { colors, radius, spacing, typography } from '../../theme/theme';
+import { fetchBooks } from './adminService';
 
 export default function AdminDashboardScreen({ navigation }) {
   const [logoutVisible, setLogoutVisible] = useState(false);
@@ -21,29 +22,54 @@ export default function AdminDashboardScreen({ navigation }) {
   useEffect(() => {
     async function loadStats() {
       try {
-        const [booksRes, activeHoldsRes, pendingHoldsRes, seatsRes, occupiedSeatsRes, unattendedSeatsRes] = await Promise.all([
-          supabase.from('books').select('*', { count: 'exact', head: true }),
-          supabase.from('reservations').select('*', { count: 'exact', head: true }).eq('type', 'book').eq('status', 'confirmed'),
-          supabase.from('reservations').select('*', { count: 'exact', head: true }).eq('type', 'book').eq('status', 'pending'),
-          supabase.from('seats').select('*', { count: 'exact', head: true }),
-          supabase.from('seats').select('*', { count: 'exact', head: true }).eq('status', 'occupied'),
-          supabase.from('seats').select('*', { count: 'exact', head: true }).eq('status', 'unattended'),
-        ]);
+        const localBooks = await fetchBooks();
+        
+        let dbStats = {
+          activeHolds: 0,
+          pendingPickup: 0,
+          unattendedSeats: 0,
+          totalSeats: 0,
+          occupiedSeats: 0,
+        };
 
+        if (isSupabaseConfigured) {
+          try {
+            const [activeHoldsRes, pendingHoldsRes, seatsRes, occupiedSeatsRes, unattendedSeatsRes] = await Promise.all([
+              supabase.from('reservations').select('*', { count: 'exact', head: true }).eq('type', 'book').eq('status', 'confirmed'),
+              supabase.from('reservations').select('*', { count: 'exact', head: true }).eq('type', 'book').eq('status', 'pending'),
+              supabase.from('seats').select('*', { count: 'exact', head: true }),
+              supabase.from('seats').select('*', { count: 'exact', head: true }).eq('status', 'occupied'),
+              supabase.from('seats').select('*', { count: 'exact', head: true }).eq('status', 'unattended'),
+            ]);
+            dbStats = {
+              activeHolds: activeHoldsRes.count || 0,
+              pendingPickup: pendingHoldsRes.count || 0,
+              unattendedSeats: unattendedSeatsRes.count || 0,
+              totalSeats: seatsRes.count || 0,
+              occupiedSeats: occupiedSeatsRes.count || 0,
+            };
+          } catch(e) {}
+        }
+        
         setStats({
-          totalBooks: booksRes.count || 0,
-          activeHolds: activeHoldsRes.count || 0,
-          pendingPickup: pendingHoldsRes.count || 0,
-          unattendedSeats: unattendedSeatsRes.count || 0,
-          totalSeats: seatsRes.count || 0,
-          occupiedSeats: occupiedSeatsRes.count || 0,
+          totalBooks: localBooks.length,
+          ...dbStats
         });
       } catch (err) {
         console.warn('Error loading admin stats:', err);
       }
     }
+    
+    // Refresh the numbers every time the user navigates back to this screen
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadStats();
+    });
+    
+    // Initial load
     loadStats();
-  }, []);
+    
+    return unsubscribe;
+  }, [navigation]);
 
   const handleLogout = async () => {
     setLogoutVisible(false);
